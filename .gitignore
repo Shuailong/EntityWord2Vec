@@ -1,4 +1,7 @@
 __pycache__
 *.pyc
 *.html
-corpus/text8
+corpus/
+!corpus/*demo*
+embeddings/
+!embeddings/*demo*
