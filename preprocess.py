@@ -15,6 +15,8 @@ def main(args):
     pbar = tqdm(desc='Reading corpus',
                 total=os.path.getsize(args.corpus),
                 unit='B', unit_scale=True, unit_divisor=1024)
+    if args.uncased:
+        args.entities = os.path.splitext(args.entities)[0] + '_uncased.txt'
     with utils.smart_open(args.corpus) as fin,\
             open(args.entities, 'w', encoding='utf-8') as fout:
         lexicons = Counter()
@@ -26,6 +28,8 @@ def main(args):
                 words = utils.to_unicode(text).split()
                 for w in words:
                     if w.startswith('DBPEDIA_ID/'):
+                        if args.uncased:
+                            w = w.lower() 
                         lexicons[w] += 1
                 break
             last_token = text.rfind(b' ')  # last token may have been split in two... keep for next iteration
@@ -33,6 +37,8 @@ def main(args):
                            text[last_token:].strip()) if last_token >= 0 else ([], text)
             for w in words:
                 if w.startswith('DBPEDIA_ID/'):
+                    if args.uncased:
+                        w = w.lower() 
                     lexicons[w] += 1
         for lexicon, freq in lexicons.most_common():
             fout.write(f'{lexicon}\t{freq}\n')
@@ -47,5 +53,7 @@ if __name__ == '__main__':
                         required=True)
     parser.add_argument('--entities', type=str, default='corpus/en_entity_lexicons.txt',
                         help='entity names starts with DBPEDIA_ID/')
+    parser.add_argument('--uncased', action='store_true', help='lower case')
     args = parser.parse_args()
     main(args)
+

@@ -5,6 +5,12 @@ import argparse
 from tqdm import tqdm
 import sh
 import gensim
+from gensim import utils
+
+try:
+    from gensim.models.word2vec_inner import MAX_WORDS_IN_BATCH
+except ImportError:
+    MAX_WORDS_IN_BATCH = 10000
 
 
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
@@ -18,11 +24,42 @@ def filter_wrapper(entities):
             return gensim.utils.RULE_DEFAULT
     return filter_ne
 
+class WikiCorpus(object):
+    """Iterate over sentences from the "wiki entity" corpus."""
+
+    def __init__(self, fname, max_sentence_length=MAX_WORDS_IN_BATCH, uncased=False):
+        self.fname = fname
+        self.max_sentence_length = max_sentence_length
+        self.uncased = uncased
+    def __iter__(self):
+        # the entire corpus is one gigantic line -- there are no sentence marks at all
+        # so just split the sequence of tokens arbitrarily: 1 sentence = 1000 tokens
+        sentence, rest = [], b''
+        with utils.smart_open(self.fname) as fin:
+            while True:
+                text = rest + fin.read(8192)  # avoid loading the entire file (=1 line) into RAM
+                if text == rest:  # EOF
+                    words = utils.to_unicode(text).split()
+                    if self.uncased:
+                        words = [w.lower() for w in words]
+                    sentence.extend(words)  # return the last chunk of words, too (may be shorter/longer)
+                    if sentence:
+                        yield sentence
+                    break
+                last_token = text.rfind(b' ')  # last token may have been split in two... keep for next iteration
+                words, rest = (utils.to_unicode(text[:last_token]).split(),
+                               text[last_token:].strip()) if last_token >= 0 else ([], text)
+                if self.uncased:
+                    words = [w.lower() for w in words]
+                sentence.extend(words)
+                while len(sentence) >= self.max_sentence_length:
+                    yield sentence[:self.max_sentence_length]
+                    sentence = sentence[self.max_sentence_length:]
 
 def main(args):
     # Get sentences
     logging.info('Initializing corpus')
-    sentences = gensim.models.word2vec.Text8Corpus(args.corpus)
+    sentences = WikiCorpus(args.corpus, uncased=args.uncased)
     # Get entities
     logging.info('Read entities')
     lines = int(str(sh.wc('-l', args.entities)).split()[0])
@@ -64,6 +101,7 @@ if __name__ == '__main__':
     parser.add_argument('--emb-dim', type=int, default=100, help='embedding dimension')
     parser.add_argument('--model-type', type=str, default='skipgram', choices=['skipgram', 'cbow'],
                         help='CBoW or Skip Gram. For large dataset, use skipgram.')
+    parser.add_argument('--uncased', action='store_true', help='lower case embedding')
 
     # Optimizer
     parser.add_argument('--num-epochs', type=int, default=5, help='number of epochs')
